@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  background: #F5F7FA;
+  color: #101826;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display { font-family: 'Fraunces', serif; }
+.font-mono { font-family: 'IBM Plex Mono', monospace; }
+
+::selection { background: #E4F1EE; color: #145A4F; }
+
+/* Ledger-style rule used in the EMI/loan-terms panel */
+.ledger-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.5rem 0;
+  border-bottom: 1px dashed #DCE2E8;
+}
+.ledger-row:last-child { border-bottom: none; }
+
+input:focus, select:focus, textarea:focus, button:focus-visible {
+  outline: 2px solid #1B7A6B;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
