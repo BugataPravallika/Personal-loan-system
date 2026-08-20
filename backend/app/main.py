@@ -5,6 +5,8 @@ settings used by the customer and admin flows. It also performs a small startup
 migration for the OTP table when older SQLite databases are detected.
 """
 
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,6 +21,9 @@ from .routers import auth, verification, application, admin
 
 
 def _ensure_schema():
+    if engine.url.get_backend_name() == "postgresql" and os.environ.get("EZFINANZ_SCHEMA_INIT", "false").lower() != "true":
+        return
+
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
     if "otp_codes" in inspector.get_table_names():

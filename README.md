@@ -334,8 +334,9 @@ EZFINANZ_DEV_MODE=true
 
 When enabled:
 
-- OTP codes are exposed in responses as `dev_otp`
-- The frontend can show OTPs in the inbox panel for easier testing
+- OTP codes are stored in the authenticated in-app inbox
+- The frontend shows OTPs in the verification dashboard for easier testing
+- OTP codes are not returned in API responses
 - This is ideal for a demo or assignment environment
 
 ## Eligibility and loan decision logic
@@ -470,7 +471,7 @@ python -m venv .venv
 source .venv/Scripts/activate
 pip install -r requirements.txt
 python seed.py
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8133
 ```
 
 ### 2) Frontend start
@@ -483,10 +484,10 @@ npm run dev
 
 ### 3) Access the app
 
-- Frontend: `http://localhost:5173`
-- Backend API: `http://localhost:8000`
-- Swagger docs: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/api/health`
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8133`
+- Swagger docs: `http://localhost:8133/docs`
+- Health check: `http://localhost:8133/api/health`
 
 ## Seeded admin account
 

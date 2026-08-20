@@ -100,8 +100,6 @@ def request_otp(
         "delivery_method": "external" if sent_externally else ("development" if DEV_MODE else "inbox"),
         "otp_id": otp.id,
     }
-    if DEV_MODE:
-        response["dev_otp"] = code
     return response
 
 

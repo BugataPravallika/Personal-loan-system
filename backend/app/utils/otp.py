@@ -47,6 +47,10 @@ def dispatch_otp(channel: str, destination: str, code: str, purpose: str = "veri
     """Send through a real provider when configured; otherwise keep OTPs only in DEV_MODE."""
     message = build_otp_message(channel, code, purpose)
 
+    if DEV_MODE:
+        print(f"[DEVELOPMENT OTP] {channel.upper()} -> {mask_destination(channel, destination)} | {code}")
+        return False
+
     smtp_host = os.environ.get("SMTP_HOST")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = os.environ.get("SMTP_USER")
@@ -84,8 +88,5 @@ def dispatch_otp(channel: str, destination: str, code: str, purpose: str = "veri
             except TwilioException as exc:
                 print(f"[OTP SMS delivery failed] {channel.upper()} -> {mask_destination(channel, destination)} | {type(exc).__name__}: {exc}")
 
-    if DEV_MODE:
-        print(f"[DEVELOPMENT OTP] {channel.upper()} -> {mask_destination(channel, destination)} | {code}")
-    else:
-        print(f"[OTP queued for secure delivery] {channel.upper()} -> {mask_destination(channel, destination)}")
+    print(f"[OTP queued for secure delivery] {channel.upper()} -> {mask_destination(channel, destination)}")
     return False

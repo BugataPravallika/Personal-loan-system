@@ -16,14 +16,16 @@ UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 
 
 def get_or_create_application(user: models.User, db: Session) -> models.LoanApplication:
-    app_ = (
+    applications = (
         db.query(models.LoanApplication)
-        .filter(
-            models.LoanApplication.user_id == user.id,
-            models.LoanApplication.status == "In Progress",
-        )
-        .order_by(models.LoanApplication.created_at.desc())
-        .first()
+        .filter(models.LoanApplication.user_id == user.id)
+        .order_by(models.LoanApplication.updated_at.desc(), models.LoanApplication.created_at.desc())
+        .all()
+    )
+
+    app_ = next(
+        (candidate for candidate in applications if candidate.review_status or candidate.status != "In Progress"),
+        applications[0] if applications else None,
     )
     if not app_:
         app_ = models.LoanApplication(user_id=user.id, stage=models.ApplicationStage.ACCOUNT_VERIFICATION)
