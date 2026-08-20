@@ -12,14 +12,13 @@ Backend (Render)
 2. Select the branch: feature/deploy-render-vercel
 3. Build command:
    pip install -r backend/requirements.txt
-4. Start command (Render sets $PORT automatically):
-   backend\venv\Scripts\python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
-   (Note: If you prefer use python from system env, use: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT)
+4. Start command (Render sets `$PORT` automatically):
+   `cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 5. Environment variables (minimum):
    - EZFINANZ_DEV_MODE=false
    - SECRET_KEY=<secure random string>
    - DATABASE_URL=postgres://<user>:<pass>@<host>:<port>/<db>
-   - VITE_API_URL=https://<your-render-backend>
+   - VITE_API_BASE_URL=https://<your-render-backend>/api
    - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD (if using SMTP email)
    - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER (if using Twilio SMS)
    - GOOGLE_CLIENT_ID (for Google OAuth)
@@ -34,7 +33,7 @@ Frontend (Vercel)
    - Build command: npm run build
    - Output directory: frontend/dist  (or as configured by your vite build)
 3. Environment variables in Vercel:
-   - VITE_API_URL=https://<your-render-backend>
+   - VITE_API_BASE_URL=https://<your-render-backend>/api
    - VITE_GOOGLE_CLIENT_ID=<your-google-client-id>
 4. Add the Vercel domain to Authorized JavaScript origins in Google Cloud Console for Google OAuth.
 
