@@ -49,9 +49,11 @@ def test_email_and_phone_verification_and_kyc_flow():
     # Request email OTP
     res = client.post("/api/verification/request-otp", headers=auth_header(access_token), json={"channel": "email"})
     assert res.status_code == 200
-    data = res.json()
-    assert "dev_otp" in data
-    email_code = data["dev_otp"]
+    res = client.get("/api/verification/inbox", headers=auth_header(access_token))
+    assert res.status_code == 200
+    messages = res.json()
+    assert len(messages) == 1
+    email_code = messages[0]["body"].split(" code is ", 1)[1].split(".", 1)[0]
 
     # Verify with correct email OTP
     res = client.post("/api/verification/verify-otp", headers=auth_header(access_token), json={
@@ -69,9 +71,12 @@ def test_email_and_phone_verification_and_kyc_flow():
     # Request phone OTP (provide a phone number during request)
     res = client.post("/api/verification/request-otp", headers=auth_header(access_token), json={"channel": "phone", "destination": "+919960000104"})
     assert res.status_code == 200
-    data = res.json()
-    assert "dev_otp" in data
-    phone_code = data["dev_otp"]
+    res = client.get("/api/verification/inbox", headers=auth_header(access_token))
+    assert res.status_code == 200
+    messages = res.json()
+    phone_messages = [message for message in messages if message["channel"] == "phone"]
+    assert len(phone_messages) == 1
+    phone_code = phone_messages[0]["body"].split(" code is ", 1)[1].split(".", 1)[0]
 
     # Verify phone
     res = client.post("/api/verification/verify-otp", headers=auth_header(access_token), json={
@@ -96,9 +101,12 @@ def test_otp_incorrect_attempts_consumes_after_limit():
     # Request phone OTP
     res = client.post("/api/verification/request-otp", headers=auth_header(access_token), json={"channel": "phone", "destination": "+919960000105"})
     assert res.status_code == 200
-    data = res.json()
-    assert "dev_otp" in data
-    correct_code = data["dev_otp"]
+    res = client.get("/api/verification/inbox", headers=auth_header(access_token))
+    assert res.status_code == 200
+    messages = res.json()
+    phone_messages = [message for message in messages if message["channel"] == "phone"]
+    assert len(phone_messages) == 1
+    correct_code = phone_messages[0]["body"].split(" code is ", 1)[1].split(".", 1)[0]
 
     # Submit wrong OTP 5 times
     for i in range(5):
