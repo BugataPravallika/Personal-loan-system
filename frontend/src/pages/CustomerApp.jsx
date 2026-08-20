@@ -17,8 +17,13 @@ import StatusStep from "./steps/StatusStep";
 
 const VIEW_STEP_KEY = "ezfinanz_view_step";
 
+function hasAdminReview(app) {
+  return Boolean(app?.review_status || ["Approved", "Rejected", "Disbursed"].includes(app?.status));
+}
+
 function computeStep(app) {
   if (!app) return "verify";
+  if (hasAdminReview(app)) return "status";
   if (!(app.email_verified && app.phone_verified)) return "verify";
   if (!app.has_kyc) return "kyc";
   if (!app.has_eligibility || app.eligibility_result === "Not Eligible") return "eligibility";
@@ -46,6 +51,10 @@ export default function CustomerApp() {
         phone_verified: data.phone_verified,
       });
       setViewStep((prev) => {
+        if (hasAdminReview(data)) {
+          sessionStorage.setItem(VIEW_STEP_KEY, "status");
+          return "status";
+        }
         if (prev) return prev;
         const saved = sessionStorage.getItem(VIEW_STEP_KEY);
         if (saved) return saved;
@@ -61,7 +70,7 @@ export default function CustomerApp() {
   }, [refresh]);
 
   const handleNavigate = (stepKey) => {
-    if (!app || !(app.email_verified && app.phone_verified)) {
+    if (!app || (!hasAdminReview(app) && !(app.email_verified && app.phone_verified))) {
       sessionStorage.setItem(VIEW_STEP_KEY, "verify");
       setViewStep("verify");
       return;
@@ -118,7 +127,14 @@ export default function CustomerApp() {
       case "selfie":
         return <SelfieStep onNext={handleNext} />;
       case "status":
-        return <StatusStep stage={app.stage} />;
+        return (
+          <StatusStep
+            stage={app.stage}
+            reviewStatus={app.review_status || app.status}
+            remarks={app.review_remarks}
+            reviewDate={app.review_date}
+          />
+        );
       default:
         return null;
     }
