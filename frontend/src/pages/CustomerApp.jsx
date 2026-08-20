@@ -19,7 +19,7 @@ const VIEW_STEP_KEY = "ezfinanz_view_step";
 
 function computeStep(app) {
   if (!app) return "verify";
-  if (!(app.email_verified || app.phone_verified)) return "verify";
+  if (!(app.email_verified && app.phone_verified)) return "verify";
   if (!app.has_kyc) return "kyc";
   if (!app.has_eligibility || app.eligibility_result === "Not Eligible") return "eligibility";
   if (!app.has_emi) return "emi";
@@ -61,6 +61,11 @@ export default function CustomerApp() {
   }, [refresh]);
 
   const handleNavigate = (stepKey) => {
+    if (!app || !(app.email_verified && app.phone_verified)) {
+      sessionStorage.setItem(VIEW_STEP_KEY, "verify");
+      setViewStep("verify");
+      return;
+    }
     sessionStorage.setItem(VIEW_STEP_KEY, stepKey);
     setViewStep(stepKey);
   };
@@ -131,7 +136,17 @@ export default function CustomerApp() {
       </header>
 
       <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 md:grid-cols-[260px_1fr] gap-8">
-        <aside className="bg-white/50 rounded-2xl p-3">
+        <aside className="bg-white/50 rounded-2xl p-3 space-y-4">
+          <div className="rounded-lg border border-hairline p-4 bg-white">
+            <h3 className="font-medium text-sm text-ink900 mb-2">Application Status</h3>
+            <div className="text-sm text-ink700 mb-2">{app?.review_status || app?.status}</div>
+            {app?.review_remarks && (
+              <div className="text-xs text-ink500 mb-1">Remarks</div>
+            )}
+            {app?.review_remarks && <div className="text-sm font-mono text-ink900">{app.review_remarks}</div>}
+            {app?.review_date && <div className="text-xs text-ink500 mt-2">Reviewed at {new Date(app.review_date).toLocaleString()}</div>}
+          </div>
+
           <Stepper currentKey={currentComputed} onNavigate={handleNavigate} />
         </aside>
         <main key={`${stepToRender}-${app?.id}`}>{renderStep()}</main>

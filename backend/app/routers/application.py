@@ -114,6 +114,10 @@ def my_application(
         "id": app_.id,
         "stage": app_.stage.value,
         "status": app_.status,
+        "review_status": (app_.review_status.value if app_.review_status else None),
+        "review_remarks": app_.review_remarks,
+        "review_date": app_.review_date,
+        "reviewed_by": app_.reviewed_by,
         "email_verified": user.email_verified,
         "phone_verified": user.phone_verified,
         "has_kyc": app_.kyc is not None,
@@ -136,10 +140,8 @@ def my_application(
 def submit_kyc(
     payload: schemas.KYCRequest,
     db: Session = Depends(get_db),
-    user: models.User = Depends(security.require_customer),
+    user: models.User = Depends(security.require_verified_identity),
 ):
-    if not (user.email_verified or user.phone_verified):
-        raise HTTPException(400, "Please verify your email or phone before continuing to KYC.")
 
     app_ = get_or_create_application(user, db)
     kyc = app_.kyc or models.KYCDetail(application_id=app_.id)
@@ -156,7 +158,7 @@ def submit_kyc(
 def upload_id_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: models.User = Depends(security.require_customer),
+    user: models.User = Depends(security.require_verified_identity),
 ):
     app_ = get_or_create_application(user, db)
     if not app_.kyc:
@@ -179,7 +181,7 @@ def upload_id_document(
 def check_eligibility(
     payload: schemas.EligibilityRequest,
     db: Session = Depends(get_db),
-    user: models.User = Depends(security.require_customer),
+    user: models.User = Depends(security.require_verified_identity),
 ):
     app_ = get_or_create_application(user, db)
     if not app_.kyc:
@@ -224,7 +226,7 @@ def check_eligibility(
 def emi_quote(
     payload: schemas.EMIQuoteRequest,
     db: Session = Depends(get_db),
-    user: models.User = Depends(security.require_customer),
+    user: models.User = Depends(security.require_verified_identity),
 ):
     """Live-recalculating quote — does NOT persist. Lets the customer try
     different amount/tenure combinations before confirming (see /emi/confirm)."""
@@ -251,7 +253,7 @@ def _rate_from_eligibility(app_: models.LoanApplication) -> float:
 def emi_confirm(
     payload: schemas.EMIQuoteRequest,
     db: Session = Depends(get_db),
-    user: models.User = Depends(security.require_customer),
+    user: models.User = Depends(security.require_verified_identity),
 ):
     app_ = get_or_create_application(user, db)
     if not app_.eligibility or app_.eligibility.result == models.EligibilityResult.NOT_ELIGIBLE:
@@ -288,7 +290,7 @@ def emi_confirm(
 def add_bank_account(
     payload: schemas.BankAccountRequest,
     db: Session = Depends(get_db),
-    user: models.User = Depends(security.require_customer),
+    user: models.User = Depends(security.require_verified_identity),
 ):
     app_ = get_or_create_application(user, db)
     if not app_.emi:
@@ -309,7 +311,7 @@ def add_bank_account(
 def submit_declaration(
     payload: schemas.DeclarationRequest,
     db: Session = Depends(get_db),
-    user: models.User = Depends(security.require_customer),
+    user: models.User = Depends(security.require_verified_identity),
 ):
     app_ = get_or_create_application(user, db)
     if not app_.bank_account:
@@ -331,7 +333,7 @@ def submit_declaration(
 def submit_selfie(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: models.User = Depends(security.require_customer),
+    user: models.User = Depends(security.require_verified_identity),
 ):
     app_ = get_or_create_application(user, db)
     if not app_.declaration or not app_.declaration.accepted:

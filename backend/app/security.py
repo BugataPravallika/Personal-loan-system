@@ -67,3 +67,12 @@ def require_customer(user: models.User = Depends(get_current_user)) -> models.Us
     if user.role != models.Role.CUSTOMER:
         raise HTTPException(status_code=403, detail="Customer access required")
     return user
+
+
+def require_verified_identity(user: models.User = Depends(get_current_user)) -> models.User:
+    if not user.email_verified or not user.phone_verified:
+        raise HTTPException(
+            status_code=403,
+            detail="Complete both email and phone verification before continuing with the loan application.",
+        )
+    return user

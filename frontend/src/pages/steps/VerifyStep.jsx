@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import client from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
 import { Card, Field, Input, Button, Banner } from "../../components/ui";
@@ -10,11 +10,7 @@ function OtpInbox({ messages, loading }) {
     return <p className="text-xs text-ink500">Checking your messages…</p>;
   }
   if (!messages.length) {
-    return (
-      <p className="text-xs text-ink500">
-        Your verification message will appear here once sent.
-      </p>
-    );
+    return <p className="text-xs text-ink500">Your verification message will appear here once sent.</p>;
   }
 
   return (
@@ -33,15 +29,21 @@ function OtpInbox({ messages, loading }) {
   );
 }
 
-function Channel({ channel, verified, onVerified }) {
+function Channel({ channel, verified, onVerified, profile }) {
   const [otpSent, setOtpSent] = useState(false);
   const [maskedDestination, setMaskedDestination] = useState("");
+  const [destination, setDestination] = useState(channel === "email" ? (profile?.email || "") : (profile?.phone || ""));
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [inbox, setInbox] = useState([]);
   const [inboxLoading, setInboxLoading] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+  const [deliveryMethod, setDeliveryMethod] = useState("development");
+
+  const displayLabel = channel === "email" ? "Email" : "Phone Number";
+  const actionLabel = channel === "email" ? "Send Verification Code" : "Send OTP";
+  const fieldLabel = channel === "email" ? "Enter 6-digit code" : "Enter 6-digit OTP";
 
   const loadInbox = async () => {
     setInboxLoading(true);
@@ -63,15 +65,34 @@ function Channel({ channel, verified, onVerified }) {
 
   const requestOtp = async () => {
     setError("");
+    const target = destination.trim();
+    if (!target) {
+      setError(channel === "email" ? "Enter your email address before sending a verification code." : "Enter your phone number before sending an OTP.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const { data } = await client.post("/verification/request-otp", { channel });
+      const { data } = await client.post("/verification/request-otp", { channel, destination: target });
       setOtpSent(true);
-      setMaskedDestination(data.masked_destination || "");
-      setResendIn(RESEND_SECONDS);
-      await loadInbox();
+      setDeliveryMethod(data.delivery_method || "development");
+      setMaskedDestination(data.masked_destination || target);
+      setResendIn((data && data.retry_after_seconds) || RESEND_SECONDS);
+      if (data.delivery_method === "development") {
+        await loadInbox();
+      }
     } catch (err) {
-      setError(err.message);
+      // axios-style error handling
+      const resp = err?.response?.data || err?.response;
+      if (err?.response?.status === 429) {
+        const retryHeader = err?.response?.headers?.["retry-after"];
+        const retry = retryHeader ? parseInt(retryHeader, 10) : (resp?.retry_after_seconds || RESEND_SECONDS);
+        setError(resp?.detail || "Please wait before requesting another OTP.");
+        setOtpSent(true);
+        setResendIn(retry);
+      } else {
+        setError(resp?.detail || err.message || "Unable to send the verification code right now.");
+      }
     } finally {
       setLoading(false);
     }
@@ -85,10 +106,16 @@ function Channel({ channel, verified, onVerified }) {
     }
     setLoading(true);
     try {
-      const { data } = await client.post("/verification/verify-otp", { channel, code });
+      const { data } = await client.post("/verification/verify-otp", { channel, code, destination });
       onVerified(channel, data);
     } catch (err) {
-      setError(err.message);
+      const resp = err?.response?.data || err?.response;
+      // If server returned attempts remaining info, show it
+      if (resp && typeof resp === "object" && resp.attempts_remaining !== undefined) {
+        setError(resp.detail || `Incorrect OTP. ${resp.attempts_remaining} attempts remaining.`);
+      } else {
+        setError(resp?.detail || err.message || "Verification failed. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -97,7 +124,7 @@ function Channel({ channel, verified, onVerified }) {
   if (verified) {
     return (
       <div className="flex items-center gap-2 rounded-lg bg-teal-light px-4 py-3 text-sm text-teal-dark font-medium">
-        <span>✓</span> {channel === "email" ? "Email" : "Phone number"} verified
+        <span>✓</span> {displayLabel} verified
       </div>
     );
   }
@@ -106,70 +133,90 @@ function Channel({ channel, verified, onVerified }) {
     <div className="rounded-lg border border-hairline p-4 space-y-4">
       <Banner type="error">{error}</Banner>
 
-      {!otpSent ? (
-        <Button variant="secondary" onClick={requestOtp} disabled={loading}>
-          {loading ? "Sending…" : `Send verification code to ${channel}`}
-        </Button>
-      ) : (
-        <>
-          <Banner type="success">
-            Verification code sent to <span className="font-mono">{maskedDestination}</span>.
-            Open your {channel === "email" ? "email inbox" : "messages"} below to find the code.
-          </Banner>
+      <div className="space-y-3">
+        <p className="text-sm font-medium text-ink900">{displayLabel}</p>
+        <p className="text-sm text-ink500">
+          {channel === "email"
+            ? (destination ? destination.replace(/(.{1}).*(@.*)/, "$1***$2") : "No email on file")
+            : (destination ? destination.replace(/(\+\d{2})\d{4,}(\d{2})$/, "$1 ******$2") : "No phone number on file")}
+        </p>
 
-          <div>
-            <p className="text-xs font-medium text-ink900 mb-2 uppercase tracking-wide">
-              {channel === "email" ? "Email Inbox" : "SMS Messages"}
-            </p>
-            <OtpInbox messages={inbox} loading={inboxLoading} />
-            <button
-              type="button"
-              onClick={loadInbox}
-              className="mt-2 text-xs text-teal hover:underline"
-            >
-              Refresh messages
-            </button>
-          </div>
-
-          <div className="flex gap-2 items-end">
-            <Field label="Enter 6-digit code" className="flex-1">
+        {!otpSent ? (
+          <>
+            <Field label={channel === "email" ? "Registered email" : "Phone number"}>
               <Input
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="000000"
+                type={channel === "email" ? "email" : "tel"}
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                placeholder={channel === "email" ? "you@example.com" : "+91 9XXXXXXXXX"}
               />
             </Field>
-            <Button onClick={verify} disabled={loading || code.length !== 6} className="mb-4">
-              {loading ? "Verifying…" : "Verify"}
+            <Button variant="secondary" onClick={requestOtp} disabled={loading || !destination.trim()}>
+              {loading ? "Sending…" : actionLabel}
             </Button>
-          </div>
+          </>
+        ) : (
+          <>
+            <Banner type="success">
+              {deliveryMethod === "development"
+                ? <>Verification code sent to <span className="font-mono">{maskedDestination}</span>.</>
+                : <>A secure verification code has been sent to <span className="font-mono">{maskedDestination}</span>.</>}
+            </Banner>
 
-          <Button
-            variant="ghost"
-            onClick={requestOtp}
-            disabled={loading || resendIn > 0}
-            className="text-xs"
-          >
-            {resendIn > 0 ? `Resend code in ${resendIn}s` : "Resend code"}
-          </Button>
-        </>
-      )}
+            {deliveryMethod === "development" && (
+              <div>
+                <p className="text-xs font-medium text-ink900 mb-2 uppercase tracking-wide">
+                  {channel === "email" ? "Email Inbox" : "Development OTP"}
+                </p>
+                <OtpInbox messages={inbox} loading={inboxLoading} />
+                <button type="button" onClick={loadInbox} className="mt-2 text-xs text-teal hover:underline">
+                  Refresh messages
+                </button>
+              </div>
+            )}
+
+            <div className="flex gap-2 items-end">
+              <Field label={fieldLabel} className="flex-1">
+                <Input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                />
+              </Field>
+              <Button onClick={verify} disabled={loading || code.length !== 6} className="mb-4">
+                {loading ? "Verifying…" : "Verify"}
+              </Button>
+            </div>
+
+            <Button variant="ghost" onClick={requestOtp} disabled={loading || resendIn > 0} className="text-xs">
+              {resendIn > 0 ? `Resend code in ${resendIn}s` : "Resend code"}
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
 export default function VerifyStep({ onNext, app }) {
-  const { verification, markVerified } = useAuth();
+  const { verification, markVerified, profile } = useAuth();
 
-  const emailVerified = verification.email_verified || app?.email_verified;
-  const phoneVerified = verification.phone_verified || app?.phone_verified;
-  const canContinue = emailVerified || phoneVerified;
+  const emailVerified = Boolean(verification.email_verified || app?.email_verified);
+  const phoneVerified = Boolean(verification.phone_verified || app?.phone_verified);
+  const canContinue = emailVerified && phoneVerified;
 
   const handleVerified = (channel, data) => {
     markVerified(channel, data);
   };
+
+  const statusText = useMemo(() => {
+    if (emailVerified && phoneVerified) return "Both email and phone are verified.";
+    if (emailVerified) return "Email verified. Phone still needs verification.";
+    if (phoneVerified) return "Phone verified. Email still needs verification.";
+    return "Email and phone verification are both required before continuing.";
+  }, [emailVerified, phoneVerified]);
 
   return (
     <Card>
@@ -178,22 +225,20 @@ export default function VerifyStep({ onNext, app }) {
         Confirm your email and phone number so we can securely reach you about your application.
       </p>
 
+      <div className="mb-5 rounded-xl border border-hairline bg-paper px-4 py-3 text-xs text-ink500">
+        <span className="font-medium text-ink900">Status:</span> {statusText}
+      </div>
+
       <div className="space-y-4">
-        <div>
-          <p className="text-sm font-medium text-ink900 mb-2">Email</p>
-          <Channel channel="email" verified={emailVerified} onVerified={handleVerified} />
-        </div>
-        <div>
-          <p className="text-sm font-medium text-ink900 mb-2">Phone</p>
-          <Channel channel="phone" verified={phoneVerified} onVerified={handleVerified} />
-        </div>
+        <Channel channel="email" verified={emailVerified} onVerified={handleVerified} profile={profile} />
+        <Channel channel="phone" verified={phoneVerified} onVerified={handleVerified} profile={profile} />
       </div>
 
       <Button onClick={onNext} disabled={!canContinue} className="mt-6">
-        Continue to KYC
+        Continue to Loan Application
       </Button>
       {!canContinue && (
-        <p className="text-xs text-ink500 mt-2">Verify at least one channel to continue.</p>
+        <p className="text-xs text-ink500 mt-2">Email and phone verification must both be complete before continuing.</p>
       )}
     </Card>
   );
