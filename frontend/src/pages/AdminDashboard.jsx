@@ -56,6 +56,7 @@ export default function AdminDashboard() {
                   <th className="text-left px-5 py-3 font-medium">Loan Amount</th>
                   <th className="text-left px-5 py-3 font-medium">Tenure</th>
                   <th className="text-left px-5 py-3 font-medium">Stage</th>
+                  <th className="text-left px-5 py-3 font-medium">Review</th>
                   <th className="text-left px-5 py-3 font-medium">Submitted</th>
                   <th className="text-left px-5 py-3 font-medium"></th>
                 </tr>
@@ -76,6 +77,7 @@ export default function AdminDashboard() {
                     <td className="px-5 py-4">
                       <StageBadge stage={a.stage} />
                     </td>
+                    <td className="px-5 py-4 font-mono text-sm">{a.review_status || "—"}</td>
                     <td className="px-5 py-4 text-ink500 text-xs font-mono">
                       {new Date(a.created_at).toLocaleString()}
                     </td>

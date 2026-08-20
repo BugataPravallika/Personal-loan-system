@@ -14,6 +14,7 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     identifier: str  # email or phone
     password: Optional[str] = None
+    otp: Optional[str] = None
 
 
 class OAuthLoginRequest(BaseModel):
@@ -28,11 +29,13 @@ class GoogleAuthRequest(BaseModel):
 
 class OTPRequest(BaseModel):
     channel: str  # "email" | "phone"
+    destination: Optional[str] = None
 
 
 class OTPVerifyRequest(BaseModel):
     channel: str
     code: str
+    destination: Optional[str] = None
 
 
 class TokenResponse(BaseModel):
@@ -40,6 +43,8 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     role: str
     user_id: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
     email_verified: bool
     phone_verified: bool
 
@@ -149,6 +154,22 @@ class ApplicationSummaryOut(BaseModel):
     stage: str
     status: str
     created_at: datetime
+    review_status: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AdminReviewRequest(BaseModel):
+    review_status: str  # Under Review | Approved | Rejected | More Information Required
+    remarks: Optional[str] = None
+
+
+class AdminReviewOut(BaseModel):
+    review_status: Optional[str]
+    review_remarks: Optional[str]
+    review_date: Optional[datetime]
+    reviewed_by: Optional[str]
 
     class Config:
         from_attributes = True

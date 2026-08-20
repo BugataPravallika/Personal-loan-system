@@ -1,4 +1,6 @@
+import hashlib
 import os
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.auth.transport import requests as google_requests
@@ -18,6 +20,8 @@ def _token_for(user: models.User) -> schemas.TokenResponse:
         access_token=token,
         role=user.role.value,
         user_id=user.id,
+        email=user.email,
+        phone=user.phone,
         email_verified=user.email_verified,
         phone_verified=user.phone_verified,
     )
@@ -65,10 +69,33 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
     if user.auth_provider == models.AuthProvider.EMAIL:
         if not payload.password or not security.verify_password(payload.password, user.password_hash):
             raise HTTPException(401, "Incorrect email or password.")
-    # Phone-based accounts log in purely via OTP (see /verification/request-otp + verify-otp),
-    # so a plain password login isn't applicable there.
     elif user.auth_provider == models.AuthProvider.PHONE:
-        raise HTTPException(400, "This account uses phone OTP login. Request an OTP instead.")
+        if not payload.otp:
+            raise HTTPException(400, "This account uses phone OTP login. Request and verify an OTP before logging in.")
+        otp = (
+            db.query(models.OTPCode)
+            .filter(
+                models.OTPCode.user_id == user.id,
+                models.OTPCode.channel == "phone",
+                models.OTPCode.consumed == False,  # noqa: E712
+            )
+            .order_by(models.OTPCode.created_at.desc())
+            .first()
+        )
+        if not otp or otp.expires_at < datetime.utcnow():
+            raise HTTPException(401, "Phone OTP expired or not found. Please request a new one.")
+        submitted_hash = hashlib.sha256(payload.otp.strip().encode("utf-8")).hexdigest()
+        if otp.code_hash and submitted_hash != otp.code_hash:
+            raise HTTPException(401, "Incorrect phone OTP.")
+        if not otp.code_hash and otp.code != payload.otp.strip():
+            raise HTTPException(401, "Incorrect phone OTP.")
+        otp.consumed = True
+        db.commit()
+    elif user.auth_provider == models.AuthProvider.GOOGLE:
+        # Google auth is handled by dedicated OAuth endpoints; a direct password login
+        # is unnecessary unless the user later sets a local password.
+        if not payload.password:
+            raise HTTPException(400, "This account uses Google sign-in. Use the Google login option.")
 
     return _token_for(user)
 
@@ -81,13 +108,15 @@ def _login_or_create_google_user(db: Session, email: str, full_name: str) -> mod
             email=email,
             auth_provider=models.AuthProvider.GOOGLE,
             role=models.Role.CUSTOMER,
-            email_verified=True,
+            email_verified=False,
+            phone_verified=False,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    elif not user.email_verified:
-        user.email_verified = True
+    else:
+        user.email_verified = False
+        user.phone_verified = False
         db.commit()
     return user
 
@@ -95,6 +124,9 @@ def _login_or_create_google_user(db: Session, email: str, full_name: str) -> mod
 @router.post("/oauth/google", response_model=schemas.TokenResponse)
 def oauth_google(payload: schemas.OAuthLoginRequest, db: Session = Depends(get_db)):
     user = _login_or_create_google_user(db, payload.email, payload.full_name)
+    user.email_verified = False
+    user.phone_verified = False
+    db.commit()
     return _token_for(user)
 
 
@@ -116,6 +148,9 @@ def google_sign_in(payload: schemas.GoogleAuthRequest, db: Session = Depends(get
 
     full_name = idinfo.get("name") or email.split("@")[0]
     user = _login_or_create_google_user(db, email, full_name)
+    user.email_verified = False
+    user.phone_verified = False
+    db.commit()
     return _token_for(user)
 
 

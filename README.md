@@ -102,6 +102,66 @@ The app is split into two major layers:
 
 The backend and frontend are intentionally easy to run locally without external services. OTPs, file uploads, and mock verification events are simulated so reviewers can understand the full workflow without requiring production-grade infrastructure.
 
+Verification & security (Important recruiter/demo notes)
+-------------------------------------------------------
+For this submission the identity verification flow has been implemented as a mandatory, separate step in the loan application. Please note the following key behaviors (these are intentionally strict to reflect production expectations):
+
+- Mandatory identity verification: Both email and phone verification are required before a customer can proceed to the loan application steps. These are stored independently on the User model as `email_verified` and `phone_verified`.
+
+- OTP security and throttling:
+  - OTPs are 6-digit numeric codes, generated server-side and hashed (SHA-256) in the database.
+  - TTL: 10 minutes from issuance.
+  - Single-use: an OTP is consumed on success, expiry, or after too many failed attempts.
+  - Cooldown: 60 seconds between OTP requests for the same user and verification channel (email or phone). Repeated requests within cooldown return HTTP 429 with a Retry-After header.
+  - Request cap: maximum 5 OTP requests per verification channel per user within a rolling 1-hour window (returns HTTP 429 when exceeded).
+  - Verification attempts: maximum 5 incorrect attempts per OTP; upon the 5th incorrect attempt the OTP is invalidated and the user must request a new code.
+
+- DEV_MODE behavior:
+  - When `EZFINANZ_DEV_MODE=true` the project exposes an authenticated inbox endpoint (`GET /api/verification/inbox`) that shows the latest unconsumed OTP messages for the authenticated user. This is strictly for development/demonstration — OTPs are NOT exposed in production when DEV_MODE=false.
+  - DEV_MODE does NOT bypass or weaken server-side throttling, expiry, or attempt limits.
+
+- Delivery:
+  - The code supports SMTP for email and Twilio for SMS. When those are not configured (or Twilio trial limitations apply), DEV_MODE inbox is used for demonstration only.
+
+Demo & run instructions (quick)
+------------------------------
+1. Backend (from `backend/`):
+   - Create and activate a virtualenv, install dependencies:
+     - python -m venv venv
+     - venv\Scripts\activate
+     - pip install -r requirements.txt
+   - Run the backend in development/demo mode (DEV inbox available):
+     - set EZFINANZ_DEV_MODE=true
+     - set any other env vars needed (SECRET_KEY, DATABASE_URL optional)
+     - python -m uvicorn app.main:app --host 0.0.0.0 --port 8133
+   - Health check: GET http://localhost:8133/api/health
+
+2. Frontend (from `frontend/`):
+   - npm install
+   - npm run dev (open http://localhost:3000)
+   - Or build for production (the built `dist/` is included in the submission ZIP so reviewers can open static assets):
+     - npm run build
+     - Serve `frontend/dist/` using a static file server if desired.
+
+3. Demo flow to validate verification:
+   - Sign up using email or phone (or Google). Regardless of signup method, the Verify Identity step requires BOTH email and phone verification before continuing.
+   - Use the UI buttons to "Send Verification Code" (email) and "Send OTP" (phone). In DEV_MODE you will see OTPs in the in-app inbox.
+   - Attempting to jump ahead to KYC/loan steps without both `email_verified` and `phone_verified` will be rejected by the backend (HTTP 403).
+
+What's included for reviewers
+----------------------------
+- Full source code for backend and frontend
+- DEPLOY.md with Render/Vercel deployment steps
+- frontend/dist/ (production build) included in the submission ZIP so reviewers can open the static frontend without running npm (optional)
+
+Notes
+-----
+- No production credentials (Twilio, SMTP, Google client secrets) are committed in the repository. If you configure those providers, set the appropriate environment variables — do not add secrets to committed files.
+- If you want automated tests added for OTP throttling and verification flows, I can add them before final submission. Currently the repo has no pytest tests.
+
+If anything else should be clarified in the README for the recruiter's review, tell me which section to expand and I'll add it.
+
+
 ## Project structure
 
 ```text
@@ -274,8 +334,9 @@ EZFINANZ_DEV_MODE=true
 
 When enabled:
 
-- OTP codes are exposed in responses as `dev_otp`
-- The frontend can show OTPs in the inbox panel for easier testing
+- OTP codes are stored in the authenticated in-app inbox
+- The frontend shows OTPs in the verification dashboard for easier testing
+- OTP codes are not returned in API responses
 - This is ideal for a demo or assignment environment
 
 ## Eligibility and loan decision logic
@@ -410,7 +471,7 @@ python -m venv .venv
 source .venv/Scripts/activate
 pip install -r requirements.txt
 python seed.py
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8133
 ```
 
 ### 2) Frontend start
@@ -423,10 +484,10 @@ npm run dev
 
 ### 3) Access the app
 
-- Frontend: `http://localhost:5173`
-- Backend API: `http://localhost:8000`
-- Swagger docs: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/api/health`
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8133`
+- Swagger docs: `http://localhost:8133/docs`
+- Health check: `http://localhost:8133/api/health`
 
 ## Seeded admin account
 

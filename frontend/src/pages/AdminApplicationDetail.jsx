@@ -30,6 +30,8 @@ export default function AdminApplicationDetail() {
   const [showReject, setShowReject] = useState(false);
   const [busy, setBusy] = useState(false);
   const [selfieUrl, setSelfieUrl] = useState(null);
+  const [reviewStatus, setReviewStatus] = useState(app?.review_status || "Under Review");
+  const [remarks, setRemarks] = useState(app?.review_remarks || "");
 
   const load = () => client.get(`/admin/applications/${id}`).then(({ data }) => setApp(data));
 
@@ -51,6 +53,12 @@ export default function AdminApplicationDetail() {
     return () => objectUrl && URL.revokeObjectURL(objectUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app?.selfie, id]);
+
+  useEffect(() => {
+    if (!app) return;
+    setReviewStatus(app.review_status || "Under Review");
+    setRemarks(app.review_remarks || "");
+  }, [app]);
 
   const reviewSelfie = async (approve) => {
     setError("");
@@ -78,6 +86,19 @@ export default function AdminApplicationDetail() {
       await load();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitReview = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      await client.post(`/admin/applications/${id}/review`, { review_status: reviewStatus, remarks });
+      await load();
+    } catch (err) {
+      setError(err?.response?.data?.detail || err.message || "Failed to save review.");
     } finally {
       setBusy(false);
     }
@@ -228,6 +249,30 @@ export default function AdminApplicationDetail() {
             )}
           </Section>
         )}
+
+        <Section title="Admin Review">
+          <div className="space-y-3">
+            <Row label="Current status" value={app.review_status || app.status} />
+            <Row label="Reviewed at" value={app.review_date ? new Date(app.review_date).toLocaleString() : "—"} />
+            {app.review_remarks && <Row label="Remarks" value={app.review_remarks} />}
+
+            <div className="mt-4">
+              <label className="text-sm font-medium text-ink900">Update review</label>
+              <div className="mt-2 flex gap-2">
+                <select id="review_status" className="rounded-lg border border-hairline px-3 py-2 text-sm" onChange={(e) => setReviewStatus(e.target.value)} value={reviewStatus}>
+                  <option>Under Review</option>
+                  <option>Approved</option>
+                  <option>Rejected</option>
+                  <option>More Information Required</option>
+                </select>
+              </div>
+              <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Add remarks (optional)" className="w-full mt-2 rounded-lg border border-hairline p-3 text-sm" />
+              <div className="mt-3 flex gap-3">
+                <Button onClick={submitReview} disabled={busy}>{busy ? "Saving…" : "Save Review"}</Button>
+              </div>
+            </div>
+          </div>
+        </Section>
       </div>
     </div>
   );

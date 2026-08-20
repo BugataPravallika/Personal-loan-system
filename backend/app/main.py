@@ -5,6 +5,8 @@ settings used by the customer and admin flows. It also performs a small startup
 migration for the OTP table when older SQLite databases are detected.
 """
 
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,6 +21,9 @@ from .routers import auth, verification, application, admin
 
 
 def _ensure_schema():
+    if engine.url.get_backend_name() == "postgresql" and os.environ.get("EZFINANZ_SCHEMA_INIT", "false").lower() != "true":
+        return
+
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
     if "otp_codes" in inspector.get_table_names():
@@ -28,6 +33,23 @@ def _ensure_schema():
                 conn.execute(text("ALTER TABLE otp_codes ADD COLUMN destination VARCHAR"))
             if "message_body" not in existing:
                 conn.execute(text("ALTER TABLE otp_codes ADD COLUMN message_body TEXT"))
+            if "code_hash" not in existing:
+                conn.execute(text("ALTER TABLE otp_codes ADD COLUMN code_hash VARCHAR"))
+            if "failed_attempts" not in existing:
+                conn.execute(text("ALTER TABLE otp_codes ADD COLUMN failed_attempts INTEGER DEFAULT 0"))
+
+    # migrate loan_applications to add review fields if missing
+    if "loan_applications" in inspector.get_table_names():
+        existing_app_cols = {col["name"] for col in inspector.get_columns("loan_applications")}
+        with engine.begin() as conn:
+            if "review_status" not in existing_app_cols:
+                conn.execute(text("ALTER TABLE loan_applications ADD COLUMN review_status VARCHAR"))
+            if "review_remarks" not in existing_app_cols:
+                conn.execute(text("ALTER TABLE loan_applications ADD COLUMN review_remarks TEXT"))
+            if "review_date" not in existing_app_cols:
+                conn.execute(text("ALTER TABLE loan_applications ADD COLUMN review_date DATETIME"))
+            if "reviewed_by" not in existing_app_cols:
+                conn.execute(text("ALTER TABLE loan_applications ADD COLUMN reviewed_by VARCHAR"))
 
 
 _ensure_schema()

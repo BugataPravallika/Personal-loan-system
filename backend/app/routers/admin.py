@@ -25,6 +25,7 @@ def list_applications(
             "tenure_months": a.emi.tenure_months if a.emi else None,
             "stage": a.stage.value,
             "status": a.status,
+            "review_status": (a.review_status.value if a.review_status else None),
             "selfie_status": a.selfie.status.value if a.selfie else None,
             "created_at": a.created_at,
         })
@@ -45,6 +46,10 @@ def get_application(
         "id": a.id,
         "stage": a.stage.value,
         "status": a.status,
+        "review_status": (a.review_status.value if a.review_status else None),
+        "review_remarks": a.review_remarks,
+        "review_date": a.review_date,
+        "reviewed_by": a.reviewed_by,
         "created_at": a.created_at,
         "updated_at": a.updated_at,
         "user": {
@@ -120,6 +125,50 @@ def get_selfie_image(
     if not a or not a.selfie or not a.selfie.file_path:
         raise HTTPException(404, "No selfie found for this application.")
     return FileResponse(a.selfie.file_path)
+
+
+@router.post("/applications/{application_id}/review")
+def review_application(
+    application_id: str,
+    payload: schemas.AdminReviewRequest,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(security.require_admin),
+):
+    a = db.query(models.LoanApplication).filter(models.LoanApplication.id == application_id).first()
+    if not a:
+        raise HTTPException(404, "Application not found.")
+
+    # Map incoming status to enum if possible
+    status_map = {
+        "Under Review": models.ReviewStatus.UNDER_REVIEW,
+        "Approved": models.ReviewStatus.APPROVED,
+        "Rejected": models.ReviewStatus.REJECTED,
+        "More Information Required": models.ReviewStatus.MORE_INFO_REQUIRED,
+    }
+    chosen = payload.review_status
+    if chosen not in status_map:
+        raise HTTPException(400, "Invalid review status.")
+
+    a.review_status = status_map[chosen]
+    a.review_remarks = payload.remarks
+    a.review_date = datetime.utcnow()
+    a.reviewed_by = admin.id
+
+    # Update application overall stage/status for Approved/Rejected
+    if a.review_status == models.ReviewStatus.APPROVED:
+        a.stage = models.ApplicationStage.APPROVED
+        a.status = "Approved"
+    elif a.review_status == models.ReviewStatus.REJECTED:
+        a.stage = models.ApplicationStage.REJECTED
+        a.status = "Rejected"
+    elif a.review_status == models.ReviewStatus.MORE_INFO_REQUIRED:
+        a.status = "More Information Required"
+        # Keep stage at admin review so user can act
+    else:
+        a.status = "Under Review"
+
+    db.commit()
+    return {"message": "Application review updated.", "review_status": a.review_status.value, "review_remarks": a.review_remarks, "review_date": a.review_date}
 
 
 @router.post("/applications/{application_id}/selfie/review")

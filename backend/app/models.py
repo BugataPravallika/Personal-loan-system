@@ -76,13 +76,22 @@ class OTPCode(Base):
     id = Column(String, primary_key=True, default=gen_uuid)
     user_id = Column(String, ForeignKey("users.id"))
     channel = Column(String)  # "email" | "phone"
-    code = Column(String)
+    code = Column(String, nullable=True)
+    code_hash = Column(String, nullable=True)
+    failed_attempts = Column(Integer, default=0)
     purpose = Column(String, default="verification")
     destination = Column(String, nullable=True)
     message_body = Column(Text, nullable=True)
     expires_at = Column(DateTime)
     consumed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ReviewStatus(str, enum.Enum):
+    UNDER_REVIEW = "Under Review"
+    APPROVED = "Approved"
+    REJECTED = "Rejected"
+    MORE_INFO_REQUIRED = "More Information Required"
 
 
 class LoanApplication(Base):
@@ -92,6 +101,12 @@ class LoanApplication(Base):
     user_id = Column(String, ForeignKey("users.id"))
     stage = Column(Enum(ApplicationStage), default=ApplicationStage.ACCOUNT_VERIFICATION)
     status = Column(String, default="In Progress")  # In Progress / Approved / Rejected / Disbursed
+
+    # Admin review fields
+    review_status = Column(Enum(ReviewStatus), nullable=True)
+    review_remarks = Column(Text, nullable=True)
+    review_date = Column(DateTime, nullable=True)
+    reviewed_by = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

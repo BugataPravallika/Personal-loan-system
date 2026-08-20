@@ -6,6 +6,10 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(localStorage.getItem("ezfinanz_token"));
   const [role, setRole] = useState(localStorage.getItem("ezfinanz_role"));
+  const [profile, setProfile] = useState({
+    email: localStorage.getItem("ezfinanz_email") || "",
+    phone: localStorage.getItem("ezfinanz_phone") || "",
+  });
   const [verification, setVerification] = useState({
     email_verified: localStorage.getItem("ezfinanz_email_verified") === "true",
     phone_verified: localStorage.getItem("ezfinanz_phone_verified") === "true",
@@ -14,10 +18,13 @@ export function AuthProvider({ children }) {
   const applyAuth = useCallback((data) => {
     localStorage.setItem("ezfinanz_token", data.access_token);
     localStorage.setItem("ezfinanz_role", data.role);
+    localStorage.setItem("ezfinanz_email", data.email || "");
+    localStorage.setItem("ezfinanz_phone", data.phone || "");
     localStorage.setItem("ezfinanz_email_verified", String(data.email_verified));
     localStorage.setItem("ezfinanz_phone_verified", String(data.phone_verified));
     setToken(data.access_token);
     setRole(data.role);
+    setProfile({ email: data.email || "", phone: data.phone || "" });
     setVerification({
       email_verified: data.email_verified,
       phone_verified: data.phone_verified,
@@ -36,6 +43,17 @@ export function AuthProvider({ children }) {
       const phoneVerified = data?.phone_verified ?? (channel === "phone" ? true : prev.phone_verified);
       localStorage.setItem("ezfinanz_email_verified", String(emailVerified));
       localStorage.setItem("ezfinanz_phone_verified", String(phoneVerified));
+
+      // Update profile if the backend returned canonicalized email/phone
+      if (data?.email) {
+        localStorage.setItem("ezfinanz_email", data.email);
+        setProfile((p) => ({ ...p, email: data.email }));
+      }
+      if (data?.phone) {
+        localStorage.setItem("ezfinanz_phone", data.phone);
+        setProfile((p) => ({ ...p, phone: data.phone }));
+      }
+
       return { email_verified: emailVerified, phone_verified: phoneVerified };
     });
   }, []);
@@ -43,11 +61,14 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     localStorage.removeItem("ezfinanz_token");
     localStorage.removeItem("ezfinanz_role");
+    localStorage.removeItem("ezfinanz_email");
+    localStorage.removeItem("ezfinanz_phone");
     localStorage.removeItem("ezfinanz_email_verified");
     localStorage.removeItem("ezfinanz_phone_verified");
     sessionStorage.removeItem("ezfinanz_view_step");
     setToken(null);
     setRole(null);
+    setProfile({ email: "", phone: "" });
     setVerification({ email_verified: false, phone_verified: false });
   }, []);
 
@@ -80,6 +101,7 @@ export function AuthProvider({ children }) {
       value={{
         token,
         role,
+        profile,
         verification,
         signup,
         login,
