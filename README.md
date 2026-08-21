@@ -7,7 +7,7 @@ This project demonstrates end-to-end application architecture: secure authentica
 ## Recruiter-facing summary
 
 - Full-stack fintech demo with a customer onboarding flow and admin approval workflow
-- Built using FastAPI + React with SQLite as the default data store
+- Built using FastAPI + React with SQLAlchemy, SQLite for local fallback, and Supabase PostgreSQL for deployment
 - Includes JWT authentication, OTP-based phone/email verification, Google sign-in support, and an admin dashboard
 - Implements real business logic for loan eligibility, EMI calculation, fees, charges, and IRR estimation
 - Designed to feel like a production-ready MVP for a lending product
@@ -39,6 +39,7 @@ This is the kind of workflow a fintech company or lending product team would use
 - Bank account capture for repayment/disbursement
 - Declaration/acknowledgement before final submit
 - Selfie upload with admin review step
+- Private Supabase Storage support for KYC documents and selfies
 
 ### Admin experience
 
@@ -68,6 +69,7 @@ This is the kind of workflow a fintech company or lending product team would use
 - passlib + bcrypt for password hashing
 - python-multipart for file uploads
 - Google OAuth verification with google-auth
+- psycopg for PostgreSQL connectivity through the Supabase transaction pooler
 
 ### Frontend
 
@@ -100,7 +102,7 @@ The app is split into two major layers:
    - Calls backend APIs using JWT bearer tokens
    - Implements the multi-step guided application journey
 
-The backend and frontend are intentionally easy to run locally without external services. OTPs, file uploads, and mock verification events are simulated so reviewers can understand the full workflow without requiring production-grade infrastructure.
+The backend and frontend are intentionally easy to run locally while supporting hosted services in deployment. In local development, OTPs use the authenticated inbox and uploads fall back to `backend/uploads/`. In deployment, OTP delivery can use SMTP/Twilio and sensitive documents can use a private Supabase Storage bucket.
 
 Verification & security (Important recruiter/demo notes)
 -------------------------------------------------------
@@ -138,7 +140,7 @@ Demo & run instructions (quick)
 
 2. Frontend (from `frontend/`):
    - npm install
-   - npm run dev (open http://localhost:3000)
+  - npm run dev (open http://localhost:5173; the port is fixed for Google OAuth)
    - Or build for production (the built `dist/` is included in the submission ZIP so reviewers can open static assets):
      - npm run build
      - Serve `frontend/dist/` using a static file server if desired.
@@ -152,12 +154,15 @@ What's included for reviewers
 ----------------------------
 - Full source code for backend and frontend
 - DEPLOY.md with Render/Vercel deployment steps
+- `backend/migrate_sqlite_to_postgres.py` for non-destructive SQLite to PostgreSQL migration
+- `backend/tests/test_verification.py` for OTP and identity-verification coverage
+- `backend/tools/demo_smoke.py` for a lightweight API smoke workflow
 - frontend/dist/ (production build) included in the submission ZIP so reviewers can open the static frontend without running npm (optional)
 
 Notes
 -----
 - No production credentials (Twilio, SMTP, Google client secrets) are committed in the repository. If you configure those providers, set the appropriate environment variables — do not add secrets to committed files.
-- If you want automated tests added for OTP throttling and verification flows, I can add them before final submission. Currently the repo has no pytest tests.
+- Automated tests cover mandatory identity verification, OTP inbox usage, incorrect-attempt lockout, and KYC access control.
 
 If anything else should be clarified in the README for the recruiter's review, tell me which section to expand and I'll add it.
 
@@ -172,7 +177,11 @@ ezfinanz/
 │   ├── Procfile
 │   ├── requirements.txt
 │   ├── seed.py
-│   ├── ezfinanz.db
+│   ├── migrate_sqlite_to_postgres.py
+│   ├── tests/
+│   │   └── test_verification.py
+│   ├── tools/
+│   │   └── demo_smoke.py
 │   ├── uploads/
 │   │   ├── kyc_docs/
 │   │   └── selfies/
@@ -184,6 +193,7 @@ ezfinanz/
 │       ├── models.py
 │       ├── schemas.py
 │       ├── security.py
+│       ├── storage.py
 │       ├── routers/
 │       │   ├── admin.py
 │       │   ├── application.py
@@ -247,7 +257,7 @@ The backend uses SQLAlchemy models defined in `backend/app/models.py`.
   - Auth providers: `email`, `phone`, and `google`
 
 - `OTPCode`
-  - Stores verification codes, expiry, destination, and message content
+  - Stores a SHA-256 code hash, expiry, destination, failed-attempt count, and development message content
   - Used for email and phone verification flow
 
 - `LoanApplication`
@@ -257,7 +267,7 @@ The backend uses SQLAlchemy models defined in `backend/app/models.py`.
 
 - `KYCDetail`
   - Stores personal data and ID information
-  - Optional document path is saved for uploaded ID proof
+  - Stores a private Supabase Storage object key when hosted Storage is configured, or a local path in development fallback mode
 
 - `EligibilityCheck`
   - Stores annual income, requested amount, credit score, debt burden, employer info, DTI ratio, result, and maximum eligible amount
@@ -272,7 +282,7 @@ The backend uses SQLAlchemy models defined in `backend/app/models.py`.
   - Tracks whether the applicant accepted the final declaration
 
 - `Selfie`
-  - Stores selfie file path, status, rejection reason, reviewer ID, and review timestamp
+  - Stores a private Storage object key or local fallback path, status, rejection reason, reviewer ID, and review timestamp
 
 ### Application stages
 
@@ -312,6 +322,8 @@ The security layer is defined in `backend/app/security.py`.
 - Optional Google OAuth is implemented in `backend/app/routers/auth.py`
 - Server validates the Google credential token against configured client ID
 - A user record is created or updated automatically if the email is valid
+- The frontend uses `@react-oauth/google` and is pinned to `http://localhost:5173` in development so the Google Cloud authorized origin stays stable
+- Production requires the deployed frontend domain to be added to Google Cloud authorized JavaScript origins
 
 ## Verification flow
 
@@ -434,6 +446,10 @@ The backend routes include:
 JWT_SECRET=change-this-to-a-long-random-string
 EZFINANZ_DEV_MODE=false
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
+SUPABASE_STORAGE_BUCKET=ezfinanz-private
 # Optional SMTP for real email OTP delivery
 # SMTP_HOST=smtp.gmail.com
 # SMTP_PORT=587
@@ -451,15 +467,17 @@ VITE_API_BASE_URL=https://your-backend-url.onrender.com/api
 VITE_GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 ```
 
-### Important note on database config
+### Database and storage configuration
 
-The app is currently configured to use SQLite by default through `backend/app/database.py` at:
+The app uses SQLAlchemy for both local SQLite and hosted PostgreSQL. If `DATABASE_URL` is unset, it falls back to:
 
 ```text
 backend/ezfinanz.db
 ```
 
-This keeps the app quick to run locally. Because the app is built with SQLAlchemy, the underlying database can be swapped to Postgres or MySQL by updating the engine configuration in `database.py`.
+For Supabase deployment, set `DATABASE_URL` to the transaction pooler URI. The application disables prepared statements for PgBouncer compatibility. The migrated PostgreSQL schema is not recreated automatically at every startup; set `EZFINANZ_SCHEMA_INIT=true` only when explicitly initializing a new schema.
+
+KYC documents and selfies use a private Supabase Storage bucket when `SUPABASE_SERVICE_ROLE_KEY` is configured. The service-role key must exist only on the backend. Without it, local development stores files under `backend/uploads/`.
 
 ## Running the application locally
 
@@ -484,10 +502,21 @@ npm run dev
 
 ### 3) Access the app
 
-- Frontend: `http://localhost:3000`
+- Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:8133`
 - Swagger docs: `http://localhost:8133/docs`
 - Health check: `http://localhost:8133/api/health`
+
+### 4) Run the tests
+
+From `backend/`, use an isolated SQLite database so local or hosted data is not changed:
+
+```powershell
+$env:DATABASE_URL="sqlite:///C:/temp/ezfinanz-test.db"
+pytest -q
+```
+
+The checked-in tests cover both-channel identity verification, OTP inbox usage, failed-attempt invalidation, throttling-related access behavior, and KYC authorization.
 
 ## Seeded admin account
 
@@ -548,20 +577,70 @@ This is for demo use only. In a real deployment, this should be replaced with pr
 - `POST /api/admin/applications/{application_id}/selfie/review`
 - `POST /api/admin/applications/{application_id}/disburse`
 
+## SQLite to Supabase migration
+
+The repository includes `backend/migrate_sqlite_to_postgres.py` for moving existing local data to Supabase PostgreSQL. It copies users, applications, OTP records, KYC, eligibility, EMI, bank, declaration, selfie, and review data. The SQLite source is read-only during migration.
+
+```powershell
+$env:SOURCE_DATABASE_URL="sqlite:///C:/path/to/backend/ezfinanz.db"
+$env:DATABASE_URL="postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres"
+python migrate_sqlite_to_postgres.py
+```
+
+The migration is intentionally separate from application startup so a deployment cannot accidentally overwrite hosted data. Keep the original SQLite file as a backup until the hosted application has been verified.
+
+## Interview discussion points
+
+### Why this architecture?
+
+- FastAPI gives typed request validation, dependency injection, automatic OpenAPI documentation, and a small API surface.
+- SQLAlchemy keeps the domain model independent from the database engine, allowing local SQLite and hosted PostgreSQL without rewriting business logic.
+- React owns the guided customer experience while the backend remains authoritative for identity verification, eligibility, financial calculations, and workflow transitions.
+- The frontend uses a central Axios client for API calls and JWT attachment; authorization is still enforced by backend dependencies.
+
+### Security decisions
+
+- Passwords are hashed with bcrypt and never stored as plaintext.
+- JWTs protect authenticated routes, with separate customer and admin authorization dependencies.
+- Google ID tokens are verified server-side against the configured Google client ID.
+- OTPs are generated server-side, hashed before persistence, time-limited, single-use, rate-limited, and invalidated after failed-attempt limits.
+- Development OTPs are exposed only through an authenticated inbox and are never returned as a `dev_otp` API field.
+- KYC documents and selfies use a private Storage bucket and are retrieved through authenticated backend routes; the Supabase service-role key is backend-only.
+
+### Business rules demonstrated
+
+- Both email and phone verification are mandatory before KYC.
+- Credit score, DTI, income, affordability, and requested amount drive eligibility.
+- EMI terms include interest, processing fee, GST, other charges, net disbursement, total repayment, and IRR.
+- Admin review status and remarks are persisted and shown to the customer.
+- Duplicate application records are resolved by preferring the reviewed application in the customer portal.
+
+### Questions a reviewer can ask
+
+- How would you replace the demo SQLite-to-PostgreSQL migration with Alembic migrations?
+- How would you add audit logs for admin decisions and disbursements?
+- How would you implement idempotency for payment/disbursement requests?
+- How would you move from open demo CORS to an allowlist of deployed frontend origins?
+- How would you add object-size/type validation, malware scanning, retention rules, and signed URLs for uploaded documents?
+- How would you add background jobs for email/SMS delivery and retry handling?
+
 ## Production concerns and demo disclaimers
 
 This project is intended for technical demonstration and local review. Certain aspects are intentionally simplified for clarity:
 
 - CORS is open for local demo use
 - OTP delivery is simulated and can be shown in-app
-- The database is SQLite by default instead of production-grade Postgres or MySQL
+- SQLite remains available as a local fallback; deployed environments use Supabase PostgreSQL
+- File uploads require a private Supabase Storage bucket in deployed environments because Render filesystems are ephemeral
 - The default admin credentials are intentionally easy to use for demo purposes
 - Real email/SMS, production monitoring, and strict security measures should be added before production deployment
 
 Before real-world deployment, the following should be hardened:
 
 - Use a strong `JWT_SECRET`
-- Replace local SQLite with a managed database
+- Use the Supabase PostgreSQL connection pooler and a managed migration system such as Alembic
+- Keep Supabase service-role credentials only on the backend
+- Configure private Storage lifecycle, size limits, MIME validation, and malware scanning
 - Restrict CORS to the actual frontend origin
 - Set up secure SMTP or SMS provider credentials
 - Enforce proper secret management and environment isolation
