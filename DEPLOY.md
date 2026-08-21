@@ -22,6 +22,10 @@ Backend (Render)
    - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD (if using SMTP email)
    - TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER (if using Twilio SMS)
    - GOOGLE_CLIENT_ID (for Google OAuth)
+   - SUPABASE_URL=https://<your-project-ref>.supabase.co
+   - SUPABASE_SERVICE_ROLE_KEY=<server-only Supabase service role key>
+   - SUPABASE_STORAGE_BUCKET=ezfinanz-private
+   - Create a private Supabase Storage bucket named `ezfinanz-private` before uploading documents.
 6. Database: Use Render Postgres for production. Run migrations (replace demo ALTERs with Alembic in production).
 7. Important: do NOT keep EZFINANZ_DEV_MODE=true in production.
 
@@ -40,7 +44,7 @@ Frontend (Vercel)
 Google OAuth
 ------------
 - In Google Cloud Console, set Authorized JavaScript origins to:
-  - http://localhost:3000 (for local dev)
+   - http://localhost:5173 (for local dev)
   - https://<your-vercel-domain>
 - Configure OAuth consent screen and enable the Identity APIs as required.
 

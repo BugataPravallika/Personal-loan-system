@@ -1,5 +1,4 @@
 import os
-import shutil
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -7,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas, security
 from ..database import get_db
+from ..storage import storage_enabled, upload_private_file
 from ..utils.calculations import assess_eligibility, compute_loan_terms
 
 router = APIRouter(prefix="/api/application", tags=["application"])
@@ -166,12 +166,18 @@ def upload_id_document(
     if not app_.kyc:
         raise HTTPException(400, "Submit KYC details before uploading a document.")
 
-    folder = os.path.join(UPLOAD_DIR, "kyc_docs")
-    os.makedirs(folder, exist_ok=True)
     ext = os.path.splitext(file.filename)[1] or ".jpg"
-    path = os.path.join(folder, f"{app_.id}{ext}")
-    with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    content = file.file.read()
+    if storage_enabled():
+        path = upload_private_file(
+            f"kyc/{app_.id}{ext}", content, file.content_type
+        )
+    else:
+        folder = os.path.join(UPLOAD_DIR, "kyc_docs")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"{app_.id}{ext}")
+        with open(path, "wb") as output:
+            output.write(content)
 
     app_.kyc.id_document_path = path
     db.commit()
@@ -341,12 +347,18 @@ def submit_selfie(
     if not app_.declaration or not app_.declaration.accepted:
         raise HTTPException(400, "Accept the declaration before submitting your selfie.")
 
-    folder = os.path.join(UPLOAD_DIR, "selfies")
-    os.makedirs(folder, exist_ok=True)
     ext = os.path.splitext(file.filename)[1] or ".jpg"
-    path = os.path.join(folder, f"{app_.id}{ext}")
-    with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    content = file.file.read()
+    if storage_enabled():
+        path = upload_private_file(
+            f"selfies/{app_.id}{ext}", content, file.content_type
+        )
+    else:
+        folder = os.path.join(UPLOAD_DIR, "selfies")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"{app_.id}{ext}")
+        with open(path, "wb") as output:
+            output.write(content)
 
     selfie = app_.selfie or models.Selfie(application_id=app_.id)
     selfie.file_path = path

@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -120,10 +121,17 @@ def get_selfie_image(
     db: Session = Depends(get_db),
     admin: models.User = Depends(security.require_admin),
 ):
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
+    from ..storage import download_private_file, storage_enabled
     a = db.query(models.LoanApplication).filter(models.LoanApplication.id == application_id).first()
     if not a or not a.selfie or not a.selfie.file_path:
         raise HTTPException(404, "No selfie found for this application.")
+    if storage_enabled() and not os.path.isabs(a.selfie.file_path):
+        try:
+            content, content_type = download_private_file(a.selfie.file_path)
+        except RuntimeError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        return Response(content=content, media_type=content_type or "image/jpeg")
     return FileResponse(a.selfie.file_path)
 
 
