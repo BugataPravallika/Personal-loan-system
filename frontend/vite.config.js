@@ -5,7 +5,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
-    port: 3000,
+    port: 5173,
+    strictPort: true,
     proxy: {
       '/api': {
         target: process.env.VITE_BACKEND_URL || 'http://localhost:8133',
